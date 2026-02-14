@@ -7,10 +7,13 @@
   <meta name="description" content="Single-player competitive kite fighting game">
   <style>
     @font-face {
-      font-family: 'Geist Pixel';
-      src: local('Geist Pixel');
+      font-family: 'ChipMug';
+      src: url('assets/ChipMug.ttf') format('truetype');
+      font-weight: 400;
+      font-style: normal;
       font-display: swap;
     }
+
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body {
       width: 100%; height: 100%;
@@ -20,6 +23,7 @@
       -webkit-touch-callout: none;
       -webkit-user-select: none;
       user-select: none;
+      font-family: 'ChipMug', monospace;
     }
     #game-container {
       width: 100vw; height: 100vh;
@@ -32,6 +36,7 @@
   <div id="game-container"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
+  <script>window.addEventListener('contextmenu', (e) => e.preventDefault());</script>
   <script src="game.js"></script>
 </body>
 </html>

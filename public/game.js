@@ -23,7 +23,9 @@ const STRING_RELEASE_SPEED = 130;
 
 const START_HP = 3;
 const HIT_IFRAME_MS = 950;
-const KITE_RESPAWN_DELAY_MS = 3000;
+const KITE_RETURN_PAUSE_MS = 650;
+const KITE_RETURN_RISE_SPEED = 42;
+const KITE_RETURN_TARGET_Y = GAME_H * 0.5;
 const SCENERY_JITTLE_AMP = 0.8;
 const SCENERY_JITTLE_FREQ = 0.8;
 const CAT_BITE_COOLDOWN_MS = 900;
@@ -104,6 +106,10 @@ class BootScene extends Phaser.Scene {
     this.load.image('background', 'assets/background.png');
     this.load.image('scenery', 'assets/scenery.png');
     this.load.image('tiles', 'assets/tiles.png');
+    this.load.spritesheet('chicken', 'assets/chicken.png', {
+      frameWidth: 16,
+      frameHeight: 16
+    });
   }
 
   create() {
@@ -262,7 +268,7 @@ class RunnerScene extends Phaser.Scene {
     this.dead = false;
     this.hitUntil = 0;
     this.deathAnimating = false;
-    this.respawnAt = 0;
+    this.deathRiseStartAt = 0;
     this.deathVX = 0;
     this.deathVY = 0;
     this.startTime = 0;
@@ -315,12 +321,24 @@ class RunnerScene extends Phaser.Scene {
 
     this.buildWorld();
     this.buildActors();
+    this.setupAnimations();
     this.buildEffects();
     this.buildUI();
     this.setupInput();
 
     this.obstacles = this.physics.add.group();
     this.physics.add.overlap(this.kite, this.obstacles, this.onHit, null, this);
+  }
+
+  setupAnimations() {
+    if (this.textures.exists('chicken') && !this.anims.exists('chicken_fly')) {
+      this.anims.create({
+        key: 'chicken_fly',
+        frames: this.anims.generateFrameNumbers('chicken', { start: 0, end: 7 }),
+        frameRate: 12,
+        repeat: -1
+      });
+    }
   }
 
   buildWorld() {
@@ -566,8 +584,10 @@ class RunnerScene extends Phaser.Scene {
     this.updateWind(t, dt);
     this.updateParallax(dt);
     this.updatePlayer(dt, t);
-    if (this.gameStarted) {
+    if (this.gameStarted || this.deathAnimating) {
       this.updateObstacles(dt);
+    }
+    if (this.gameStarted && !this.dead) {
       this.spawnLogic(dt);
     }
 
@@ -577,9 +597,6 @@ class RunnerScene extends Phaser.Scene {
       this.updateGroundPenalty(dt);
     } else if (this.deathAnimating) {
       this.updateDeathAnimation(dt);
-      if (this.time.now >= this.respawnAt) {
-        this.respawnKite();
-      }
     }
 
     this.drawString();
@@ -769,7 +786,8 @@ class RunnerScene extends Phaser.Scene {
 
   spawnObstacle(ramp) {
     const roll = Math.random();
-    let key = 'rock';
+    const roundObstacleKey = this.textures.exists('chicken') ? 'chicken' : 'rock';
+    let key = roundObstacleKey;
     if (roll > 0.66) key = 'bird';
     else if (roll > 0.33) key = 'gust';
 
@@ -789,15 +807,48 @@ class RunnerScene extends Phaser.Scene {
     o.setData('dir', dir);
     o.setData('speed', speed);
     o.setData('turnTimer', Phaser.Math.FloatBetween(1.2, 2.8));
-    o.setData('prevX', spawnX);
+    o.setData('prevX', o.x);
+
+    if (key === 'chicken') {
+      o.play('chicken_fly');
+      o.setScale(2);
+      o.setSize(14, 14, true);
+      o.body.setSize(22, 22, true);
+    }
   }
 
   updateObstacles(dt) {
     const children = this.obstacles.getChildren();
     for (let i = children.length - 1; i >= 0; i--) {
       const o = children[i];
+      const crashed = o.getData('crashed') === true;
+      const obstacleHalfH = (o.displayHeight || 20) * 0.5;
+      const obstacleGroundY = TILES_GROUND_Y - obstacleHalfH - 1;
 
-      if (o.body) {
+      if (crashed) {
+        let fallVx = o.getData('fallVx') || 0;
+        let fallVy = o.getData('fallVy') || 0;
+        let spinV = o.getData('spinV') || 0;
+        let groundedAt = o.getData('groundedAt') || 0;
+
+        fallVy += 760 * dt;
+        o.x += fallVx * dt;
+        o.y += fallVy * dt;
+        o.rotation += spinV * dt;
+
+        if (o.y >= obstacleGroundY) {
+          o.y = obstacleGroundY;
+          if (!groundedAt) groundedAt = this.time.now;
+          fallVy = 0;
+          fallVx *= 0.8;
+          spinV *= 0.78;
+        }
+
+        o.setData('fallVx', fallVx);
+        o.setData('fallVy', fallVy);
+        o.setData('spinV', spinV);
+        o.setData('groundedAt', groundedAt);
+      } else if (o.body) {
         let dir = o.getData('dir') || -1;
         let turnTimer = o.getData('turnTimer') || 0;
         turnTimer -= dt;
@@ -812,14 +863,9 @@ class RunnerScene extends Phaser.Scene {
         const targetVx = dir * baseSpeed + this.windX * 0.55;
         const vx = Phaser.Math.Linear(o.body.velocity.x, targetVx, Math.min(1, dt * 2.3));
         o.body.setVelocityX(vx);
-      }
 
-      const obstacleHalfH = (o.displayHeight || 20) * 0.5;
-      const obstacleGroundY = TILES_GROUND_Y - obstacleHalfH - 1;
-
-      if (o.y > obstacleGroundY) {
-        o.y = obstacleGroundY;
-        if (o.body && o.body.velocity.y > 0) {
+        if (o.y > obstacleGroundY) {
+          o.y = obstacleGroundY;
           o.body.setVelocityY(-Math.max(8, o.body.velocity.y * 0.35));
         }
       }
@@ -829,11 +875,32 @@ class RunnerScene extends Phaser.Scene {
         continue;
       }
 
-      o.setData('prevX', o.x);
+      if (crashed) {
+        const groundedAt = o.getData('groundedAt') || 0;
+        if (groundedAt && this.time.now - groundedAt > 1200) {
+          o.destroy();
+          continue;
+        }
+      }
 
-      if (o.getData('kind') === 'gust') {
+      if (crashed && o.y >= obstacleGroundY) {
+        // Settled crashed objects are no longer interactive.
+        o.setData('passed', true);
+      }
+
+      if (!crashed && o.getData('kind') === 'gust') {
         o.alpha = 0.8 + Math.sin(this.time.now * 0.015 + o.x * 0.03) * 0.2;
       }
+
+      if (!crashed && o.getData('kind') === 'chicken' && o.body) {
+        const targetRot = Phaser.Math.Clamp(Math.atan2(o.body.velocity.y, o.body.velocity.x), -0.75, 0.75);
+        o.rotation = Phaser.Math.Angle.RotateTo(o.rotation, targetRot, dt * 2.4);
+        if (Math.abs(o.body.velocity.x) > 2) {
+          o.flipX = o.body.velocity.x < 0;
+        }
+      }
+
+      o.setData('prevX', o.x);
     }
   }
 
@@ -901,11 +968,25 @@ class RunnerScene extends Phaser.Scene {
   onHit(_kite, obstacle) {
     if (this.dead) return;
     if (this.time.now < this.hitUntil) return;
+    if (obstacle.getData('crashed')) return;
 
     this.hitUntil = this.time.now + HIT_IFRAME_MS;
     this.hp -= 1;
     this.lives = this.hp;
-    obstacle.destroy();
+
+    const crashVX = (obstacle.body?.velocity.x || 0) * 0.35;
+    const crashVY = Math.min(-90, (obstacle.body?.velocity.y || 0) - 40);
+    obstacle.setData('crashed', true);
+    obstacle.setData('fallVx', crashVX);
+    obstacle.setData('fallVy', crashVY);
+    obstacle.setData('spinV', Phaser.Math.FloatBetween(-4.5, 4.5));
+    obstacle.setData('groundedAt', 0);
+    obstacle.setData('passed', true);
+    if (obstacle.body) {
+      obstacle.body.enable = false;
+      obstacle.body.setVelocity(0, 0);
+    }
+
     this.cameras.main.shake(140, 0.01);
     this.playTone(180, 120, 0.03, 'sawtooth');
 
@@ -940,15 +1021,36 @@ class RunnerScene extends Phaser.Scene {
 
   triggerDeath() {
     if (this.dead) return;
+    this.gameStarted = false;
+    this.score = 0;
+    this.elapsedMs = 0;
+    this.startTime = 0;
     this.dead = true;
     this.deathAnimating = true;
     this.kite.alpha = 1;
     this.deathVX = Phaser.Math.Between(-40, 40);
     this.deathVY = -60; // Initial pop upward
-    this.deathPhase = 'fall'; // fall, ground, flat
+    this.deathPhase = 'fall'; // fall, ground, flat, rise
     this.deathRotationSpeed = Phaser.Math.Between(-3, 3);
     this.deathGroundY = TILES_GROUND_Y - 8; // Where kite lands
-    this.respawnAt = this.time.now + KITE_RESPAWN_DELAY_MS;
+    this.deathRiseStartAt = 0;
+    const children = this.obstacles.getChildren();
+    for (let i = 0; i < children.length; i++) {
+      const o = children[i];
+      if (!o || !o.active || o.getData('crashed')) continue;
+      const crashVX = (o.body?.velocity.x || 0) * 0.35;
+      const crashVY = Math.min(-70, (o.body?.velocity.y || 0) - 30);
+      o.setData('crashed', true);
+      o.setData('fallVx', crashVX);
+      o.setData('fallVy', crashVY);
+      o.setData('spinV', Phaser.Math.FloatBetween(-4.2, 4.2));
+      o.setData('groundedAt', 0);
+      o.setData('passed', true);
+      if (o.body) {
+        o.body.enable = false;
+        o.body.setVelocity(0, 0);
+      }
+    }
     this.playTone(110, 360, 0.04, 'triangle');
   }
 
@@ -962,7 +1064,7 @@ class RunnerScene extends Phaser.Scene {
     this.lastGroundDamageTime = this.time.now;
 
     this.kite.x = Phaser.Math.Clamp(this.player.x, 14, GAME_W - 14);
-    this.kite.y = Phaser.Math.Clamp(this.player.y - 120, 14, this.kiteGroundY - 12);
+    this.kite.y = Phaser.Math.Clamp(KITE_RETURN_TARGET_Y, 14, this.kiteGroundY - 12);
     this.kiteVX = 0;
     this.kiteVY = 0;
     this.kite.rotation = 0;
@@ -1174,9 +1276,22 @@ class RunnerScene extends Phaser.Scene {
       // Keep on ground
       this.kite.y = this.deathGroundY;
     } else if (this.deathPhase === 'flat') {
-      // Kite is laying flat on ground - just fade out
+      // Pause briefly on the ground before returning to the sky.
       this.kite.y = this.deathGroundY;
       this.kite.rotation = Math.PI / 2;
+      if (!this.deathRiseStartAt) {
+        this.deathRiseStartAt = this.time.now + KITE_RETURN_PAUSE_MS;
+      } else if (this.time.now >= this.deathRiseStartAt) {
+        this.deathPhase = 'rise';
+      }
+    } else if (this.deathPhase === 'rise') {
+      this.kite.rotation = Phaser.Math.Angle.RotateTo(this.kite.rotation, 0, dt * 1.7);
+      this.kite.y -= KITE_RETURN_RISE_SPEED * dt;
+      this.kite.x += this.windX * dt * 0.05;
+
+      if (this.kite.y <= KITE_RETURN_TARGET_Y) {
+        this.respawnKite();
+      }
     }
 
   }

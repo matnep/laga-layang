@@ -778,13 +778,13 @@ class RunnerScene extends Phaser.Scene {
     this.spawnTimer -= dt;
     if (this.spawnTimer > 0) return;
 
-    const ramp = Phaser.Math.Clamp(this.score / 1200, 0, 1.4);
-    this.spawnEvery = Phaser.Math.Clamp(0.95 - ramp * 0.35, 0.45, 0.95);
+    const speedTier = Math.floor(this.score / 10);
+    this.spawnEvery = Phaser.Math.Clamp(1.2 - speedTier * 0.06, 0.5, 1.2);
     this.spawnTimer = this.spawnEvery;
-    this.spawnObstacle(ramp);
+    this.spawnObstacle(speedTier);
   }
 
-  spawnObstacle(ramp) {
+  spawnObstacle(speedTier) {
     const roll = Math.random();
     const roundObstacleKey = this.textures.exists('chicken') ? 'chicken' : 'rock';
     let key = roundObstacleKey;
@@ -792,12 +792,15 @@ class RunnerScene extends Phaser.Scene {
     else if (roll > 0.33) key = 'gust';
 
     const y = Phaser.Math.Between(36, GROUND_Y - 48);
-    const o = this.obstacles.create(GAME_W + 26, y, key);
+    const fromLeft = Math.random() < 0.5;
+    const spawnX = fromLeft ? -26 : GAME_W + 26;
+    const o = this.obstacles.create(spawnX, y, key);
     o.setDepth(43);
     o.body.setAllowGravity(false);
 
-    const speed = 125 + ramp * 80 + Phaser.Math.Between(0, 55);
-    const dir = -1;
+    const baseSpeed = 72 + speedTier * 13;
+    const speed = Phaser.Math.Clamp(baseSpeed + Phaser.Math.Between(0, 24), 72, 260);
+    const dir = fromLeft ? 1 : -1;
     const vx = speed * dir;
     const vy = Phaser.Math.Between(-18, 18);
     o.body.setVelocity(vx, vy);

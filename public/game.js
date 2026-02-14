@@ -23,8 +23,14 @@ const STRING_RELEASE_SPEED = 130;
 
 const START_HP = 3;
 const HIT_IFRAME_MS = 950;
+const KITE_RESPAWN_DELAY_MS = 3000;
 const SCENERY_JITTLE_AMP = 0.8;
 const SCENERY_JITTLE_FREQ = 0.8;
+const CAT_BITE_COOLDOWN_MS = 900;
+const CAT_BITE_CHANCE = 0.2;
+const CAT_WANDER_SPEED = 7;
+const CAT_WANDER_RADIUS = 44;
+const PLAYER_WALK_SPEED = 60;
 
 // Ground collision - tiles act as solid ground
 // The tiles layer sits at a certain height, kite and tail must stay above
@@ -53,11 +59,11 @@ function loadJson(key, fallback) {
 
 // Kite types with different stats
 const KITE_TYPES = {
-  classic: { name: 'Classic', spring: 70, drag: 4.8, gravity: 22, maxVel: 255, color: 0xff9a3d, tailLength: 8 },
-  swift: { name: 'Swift', spring: 90, drag: 5.2, gravity: 18, maxVel: 290, color: 0x6ecfff, tailLength: 12 },
-  heavy: { name: 'Heavy', spring: 55, drag: 4.2, gravity: 28, maxVel: 220, color: 0xff6e6e, tailLength: 6 },
-  balanced: { name: 'Balanced', spring: 70, drag: 4.8, gravity: 22, maxVel: 255, color: 0x9fff6e, tailLength: 10 },
-  night: { name: 'Night Owl', spring: 75, drag: 5.0, gravity: 20, maxVel: 270, color: 0xb46eff, tailLength: 14 }
+  classic: { name: 'Classic', spring: 70, drag: 4.8, gravity: 22, maxVel: 255, color: 0xff9a3d, tailLength: 5 },
+  swift: { name: 'Swift', spring: 90, drag: 5.2, gravity: 18, maxVel: 290, color: 0x6ecfff, tailLength: 7 },
+  heavy: { name: 'Heavy', spring: 55, drag: 4.2, gravity: 28, maxVel: 220, color: 0xff6e6e, tailLength: 4 },
+  balanced: { name: 'Balanced', spring: 70, drag: 4.8, gravity: 22, maxVel: 255, color: 0x9fff6e, tailLength: 6 },
+  night: { name: 'Night Owl', spring: 75, drag: 5.0, gravity: 20, maxVel: 270, color: 0xb46eff, tailLength: 8 }
 };
 
 // Weather states
@@ -80,6 +86,12 @@ const DAY_DURATION_SEC = 60;
 const WEATHER_MIN_SEC = 12;
 const WEATHER_MAX_SEC = 22;
 const TAIL_SEG_LEN = 5.5;
+const WIND_STAGES = [
+  { name: 'calm', speed: 0.65, gust: 0.6, durationMin: 4, durationMax: 6 },
+  { name: 'steady', speed: 1.0, gust: 1.0, durationMin: 4, durationMax: 7 },
+  { name: 'strong', speed: 1.35, gust: 1.3, durationMin: 4, durationMax: 6 },
+  { name: 'wild', speed: 1.7, gust: 1.7, durationMin: 3, durationMax: 5 }
+];
 
 class BootScene extends Phaser.Scene {
   constructor() {
@@ -207,6 +219,20 @@ class BootScene extends Phaser.Scene {
     g.closePath();
     g.fillPath();
     g.generateTexture('heart', 18, 18);
+    g.clear();
+
+    // Cat (ground hazard)
+    g.fillStyle(0x2d2d2d);
+    g.fillRect(4, 10, 20, 10); // body
+    g.fillRect(18, 6, 8, 8); // head
+    g.fillTriangle(19, 6, 22, 1, 24, 6); // ear
+    g.fillTriangle(23, 6, 26, 1, 28, 6); // ear
+    g.fillStyle(0x111111);
+    g.fillRect(7, 19, 4, 5); // legs
+    g.fillRect(15, 19, 4, 5);
+    g.fillStyle(0xf7e27a);
+    g.fillRect(23, 9, 2, 2); // eye
+    g.generateTexture('cat', 32, 24);
 
     g.destroy();
   }
@@ -232,12 +258,14 @@ class RunnerScene extends Phaser.Scene {
     this.lives = START_HP;
     this.best = Number(localStorage.getItem('storm_runner_best') || 0);
     this.score = 0;
+    this.gameStarted = false;
     this.dead = false;
     this.hitUntil = 0;
     this.deathAnimating = false;
+    this.respawnAt = 0;
     this.deathVX = 0;
     this.deathVY = 0;
-    this.startTime = Date.now();
+    this.startTime = 0;
     this.elapsedMs = 0;
 
     this.spawnTimer = 0;
@@ -267,12 +295,23 @@ class RunnerScene extends Phaser.Scene {
     this.cloudFrontVX = 0;
     this.cloudWindX = WIND_BASE_X;
     this.cloudDtSmooth = 1 / FPS_LIMIT;
+    this.windStageIndex = 1;
+    this.windStageTimer = Phaser.Math.FloatBetween(4, 7);
+    this.windDirection = 1;
+    this.windStageForce = 1;
 
     // Ground penalty: lose HP if kite stays on ground too long
     this.groundDamageThreshold = 2; // seconds before taking damage
     this.groundTimer = 0;
     this.lastGroundDamageTime = 0;
     this.kiteGroundY = TILES_GROUND_Y - 20;
+    this.tailGroundTouch = false;
+    this.tailGroundTouchPrev = false;
+    this.tailGroundTouchX = GAME_W * 0.5;
+    this.catNextBiteAt = 0;
+    this.catAttackUntil = 0;
+    this.catTargetX = GAME_W * 0.5;
+    this.catWanderTimer = Phaser.Math.FloatBetween(0.8, 1.8);
 
     this.buildWorld();
     this.buildActors();
@@ -338,6 +377,9 @@ class RunnerScene extends Phaser.Scene {
 
   buildActors() {
     this.player = this.add.sprite(GAME_W * 0.35, PLAYER_Y, 'player').setOrigin(0.5, 1).setDepth(40);
+    this.cat = this.add.sprite(GAME_W * 0.5, TILES_GROUND_Y - 7, 'cat')
+      .setOrigin(0.5, 1)
+      .setDepth(42);
 
     this.kite = this.add.sprite(GAME_W * 0.35, 115, 'kite_' + this.currentKiteKey).setDepth(46);
     this.physics.add.existing(this.kite);
@@ -394,6 +436,12 @@ class RunnerScene extends Phaser.Scene {
     });
     this.input.on('pointerdown', () => {
       this.pointerDown = true;
+      if (!this.gameStarted) {
+        this.gameStarted = true;
+        this.startTime = Date.now();
+        this.elapsedMs = 0;
+        this.score = 0;
+      }
       this.startBgmOnce();
     });
     this.input.on('pointerup', () => { this.pointerDown = false; });
@@ -513,23 +561,30 @@ class RunnerScene extends Phaser.Scene {
   update(time, delta) {
     const dt = Math.min(delta / 1000, 0.033);
     const t = time / 1000;
-    if (!this.dead) this.elapsedMs = Date.now() - this.startTime;
+    if (this.gameStarted && !this.dead) this.elapsedMs = Date.now() - this.startTime;
+
+    this.updateWind(t, dt);
+    this.updateParallax(dt);
+    this.updatePlayer(dt, t);
+    if (this.gameStarted) {
+      this.updateObstacles(dt);
+      this.spawnLogic(dt);
+    }
 
     if (!this.dead) {
-      this.updateWind(t);
-      this.updateParallax(dt);
-      this.updatePlayer(dt, t);
       this.updateKite(dt, t);
-      this.updateObstacles(dt);
       this.updateScoring(dt);
       this.updateGroundPenalty(dt);
-      this.spawnLogic(dt);
     } else if (this.deathAnimating) {
       this.updateDeathAnimation(dt);
+      if (this.time.now >= this.respawnAt) {
+        this.respawnKite();
+      }
     }
 
     this.drawString();
     this.updateTailPhysics(dt);
+    this.updateCatHazard(dt);
     this.drawTail();
     this.updateHUD();
   }
@@ -583,12 +638,28 @@ class RunnerScene extends Phaser.Scene {
     });
   }
 
-  updateWind(t) {
-    const gust1 = Math.sin(t * WIND_GUST_FREQ * Math.PI * 2) * WIND_GUST_AMP;
-    const gust2 = Math.sin(t * WIND_GUST_FREQ * 2.8 + 1.3) * WIND_GUST_AMP * 0.35;
-    const windMod = this.currentWeather.windMod || 1;
-    this.windX = (WIND_BASE_X + gust1 + gust2) * windMod;
-    this.windY = WIND_BASE_Y + Math.cos(t * WIND_GUST_FREQ * 1.5) * WIND_GUST_AMP * 0.2;
+  updateWind(t, dt) {
+    this.windStageTimer -= dt;
+    if (this.windStageTimer <= 0) {
+      this.windStageIndex = Phaser.Math.Between(0, WIND_STAGES.length - 1);
+      if (Math.random() < 0.7) this.windDirection *= -1;
+      const stageCfg = WIND_STAGES[this.windStageIndex];
+      this.windStageTimer = Phaser.Math.FloatBetween(stageCfg.durationMin, stageCfg.durationMax);
+    }
+
+    const stage = WIND_STAGES[this.windStageIndex];
+    this.windStageForce = stage.speed;
+
+    const weatherWind = this.currentWeather.windMod || 1;
+    const gust1 = Math.sin(t * WIND_GUST_FREQ * Math.PI * 2) * WIND_GUST_AMP * 0.45 * stage.gust;
+    const gust2 = Math.sin(t * WIND_GUST_FREQ * 2.8 + 1.3) * WIND_GUST_AMP * 0.22 * stage.gust;
+    const dirBase = 34 * stage.speed * this.windDirection;
+    const targetWindX = (dirBase + gust1 + gust2) * weatherWind;
+    const targetWindY = (WIND_BASE_Y * stage.speed) + Math.cos(t * WIND_GUST_FREQ * 1.5) * WIND_GUST_AMP * 0.2 * stage.gust;
+
+    const windBlend = Math.min(1, dt * 1.6);
+    this.windX = Phaser.Math.Linear(this.windX, targetWindX, windBlend);
+    this.windY = Phaser.Math.Linear(this.windY, targetWindY, windBlend);
   }
 
   updateParallax(dt) {
@@ -601,8 +672,8 @@ class RunnerScene extends Phaser.Scene {
     const windBlend = Math.min(1, dt * 1.4);
     this.cloudWindX = Phaser.Math.Linear(this.cloudWindX, wind, windBlend);
 
-    const backTargetVX = 6 + this.cloudWindX * 0.04;
-    const frontTargetVX = 10 + this.cloudWindX * 0.06;
+    const backTargetVX = Phaser.Math.Clamp(this.cloudWindX * 0.11, -18, 18);
+    const frontTargetVX = Phaser.Math.Clamp(this.cloudWindX * 0.17, -28, 28);
     const speedBlend = Math.min(1, dt * 2.2);
     this.cloudBackVX = Phaser.Math.Linear(this.cloudBackVX, backTargetVX, speedBlend);
     this.cloudFrontVX = Phaser.Math.Linear(this.cloudFrontVX, frontTargetVX, speedBlend);
@@ -618,7 +689,10 @@ class RunnerScene extends Phaser.Scene {
 
   updatePlayer(dt, t) {
     const targetX = Phaser.Math.Clamp(this.pointerX, 30, GAME_W - 30);
-    this.player.x = Phaser.Math.Linear(this.player.x, targetX, Math.min(1, dt * 8));
+    const dx = targetX - this.player.x;
+    const maxStep = PLAYER_WALK_SPEED * dt;
+    if (Math.abs(dx) <= maxStep) this.player.x = targetX;
+    else this.player.x += Math.sign(dx) * maxStep;
     this.player.y = PLAYER_Y + Math.sin(t * 15) * 1.2;
     this.player.flipX = this.pointerX < this.player.x;
   }
@@ -704,18 +778,42 @@ class RunnerScene extends Phaser.Scene {
     o.setDepth(43);
     o.body.setAllowGravity(false);
 
-    const vx = -(125 + ramp * 80 + Phaser.Math.Between(0, 55));
+    const speed = 125 + ramp * 80 + Phaser.Math.Between(0, 55);
+    const dir = -1;
+    const vx = speed * dir;
     const vy = Phaser.Math.Between(-18, 18);
     o.body.setVelocity(vx, vy);
 
     o.setData('passed', false);
     o.setData('kind', key);
+    o.setData('dir', dir);
+    o.setData('speed', speed);
+    o.setData('turnTimer', Phaser.Math.FloatBetween(1.2, 2.8));
+    o.setData('prevX', spawnX);
   }
 
   updateObstacles(dt) {
     const children = this.obstacles.getChildren();
     for (let i = children.length - 1; i >= 0; i--) {
       const o = children[i];
+
+      if (o.body) {
+        let dir = o.getData('dir') || -1;
+        let turnTimer = o.getData('turnTimer') || 0;
+        turnTimer -= dt;
+        if (turnTimer <= 0) {
+          if (Math.random() < 0.4) dir *= -1;
+          turnTimer = Phaser.Math.FloatBetween(1.3, 3.1);
+          o.setData('dir', dir);
+        }
+        o.setData('turnTimer', turnTimer);
+
+        const baseSpeed = o.getData('speed') || 140;
+        const targetVx = dir * baseSpeed + this.windX * 0.55;
+        const vx = Phaser.Math.Linear(o.body.velocity.x, targetVx, Math.min(1, dt * 2.3));
+        o.body.setVelocityX(vx);
+      }
+
       const obstacleHalfH = (o.displayHeight || 20) * 0.5;
       const obstacleGroundY = TILES_GROUND_Y - obstacleHalfH - 1;
 
@@ -726,15 +824,12 @@ class RunnerScene extends Phaser.Scene {
         }
       }
 
-      if (o.x < -40 || o.y < -40 || o.y > GAME_H + 40) {
+      if (o.x < -70 || o.x > GAME_W + 70 || o.y < -40 || o.y > GAME_H + 40) {
         o.destroy();
         continue;
       }
 
-      if (!o.getData('passed') && o.x < this.kite.x - 10) {
-        o.setData('passed', true);
-        this.score += 1;
-      }
+      o.setData('prevX', o.x);
 
       if (o.getData('kind') === 'gust') {
         o.alpha = 0.8 + Math.sin(this.time.now * 0.015 + o.x * 0.03) * 0.2;
@@ -744,6 +839,9 @@ class RunnerScene extends Phaser.Scene {
 
   updateScoring(dt) {
     void dt;
+    if (this.gameStarted) {
+      this.score = Math.floor(this.elapsedMs / 1000);
+    }
     if (this.score > this.best) {
       this.best = this.score;
       localStorage.setItem('storm_runner_best', String(Math.floor(this.best)));
@@ -841,6 +939,7 @@ class RunnerScene extends Phaser.Scene {
   }
 
   triggerDeath() {
+    if (this.dead) return;
     this.dead = true;
     this.deathAnimating = true;
     this.kite.alpha = 1;
@@ -849,9 +948,58 @@ class RunnerScene extends Phaser.Scene {
     this.deathPhase = 'fall'; // fall, ground, flat
     this.deathRotationSpeed = Phaser.Math.Between(-3, 3);
     this.deathGroundY = TILES_GROUND_Y - 8; // Where kite lands
+    this.respawnAt = this.time.now + KITE_RESPAWN_DELAY_MS;
     this.playTone(110, 360, 0.04, 'triangle');
-    this.obstacles.clear(true, true);
-    this.time.delayedCall(2000, () => this.scene.restart());
+  }
+
+  respawnKite() {
+    this.dead = false;
+    this.deathAnimating = false;
+    this.hp = START_HP;
+    this.lives = START_HP;
+    this.hitUntil = this.time.now + 900;
+    this.groundTimer = 0;
+    this.lastGroundDamageTime = this.time.now;
+
+    this.kite.x = Phaser.Math.Clamp(this.player.x, 14, GAME_W - 14);
+    this.kite.y = Phaser.Math.Clamp(this.player.y - 120, 14, this.kiteGroundY - 12);
+    this.kiteVX = 0;
+    this.kiteVY = 0;
+    this.kite.rotation = 0;
+    this.kite.alpha = 1;
+    this.kite.setTint(0xffffff);
+    this.rebuildTail();
+    this.tailGroundTouch = false;
+    this.tailGroundTouchPrev = false;
+  }
+
+  biteByCat() {
+    if (this.dead) return;
+    if (this.time.now < this.hitUntil) return;
+
+    this.hitUntil = this.time.now + HIT_IFRAME_MS;
+    this.hp -= 1;
+    this.lives = this.hp;
+    this.cameras.main.shake(110, 0.009);
+    this.playTone(165, 120, 0.032, 'sawtooth');
+
+    this.kite.setTint(0xff6b6b);
+    this.time.delayedCall(120, () => this.kite.setTint(0xffffff));
+
+    const biteFx = this.add.particles(this.kite.x, this.kite.y, 'particle', {
+      speed: { min: 40, max: 110 },
+      scale: { start: 0.9, end: 0 },
+      lifespan: 360,
+      quantity: 10,
+      tint: 0xffb3b3,
+      emitting: false
+    });
+    biteFx.explode(10);
+    this.time.delayedCall(380, () => biteFx.destroy());
+
+    if (this.hp <= 0) {
+      this.triggerDeath();
+    }
   }
 
   drawString() {
@@ -887,14 +1035,16 @@ class RunnerScene extends Phaser.Scene {
     this.tailNodes[0].px = rootX;
     this.tailNodes[0].py = rootY;
 
+    let groundContacts = 0;
+    let groundXSum = 0;
     for (let i = 1; i < this.tailNodes.length; i++) {
       const p = this.tailNodes[i];
       const vx = (p.x - p.px) * 0.9;
       const vy = (p.y - p.py) * 0.9 + 0.9;
       p.px = p.x;
       p.py = p.y;
-      p.x += vx + this.windX * 0.004 * dt * 60;
-      p.y += vy + this.windY * 0.003 * dt * 60;
+      p.x += vx + this.windX * 0.01 * this.windStageForce * dt * 60;
+      p.y += vy + this.windY * 0.007 * this.windStageForce * dt * 60;
 
       // Ground collision for tail - prevent passing through tiles
       if (p.y > TILES_GROUND_Y - 5) {
@@ -902,6 +1052,8 @@ class RunnerScene extends Phaser.Scene {
         // Dampen velocity when hitting ground
         p.px = p.x - vx * 0.3;
         p.py = p.y;
+        groundContacts += 1;
+        groundXSum += p.x;
       }
     }
 
@@ -921,9 +1073,47 @@ class RunnerScene extends Phaser.Scene {
         // Enforce ground constraint after constraint solving
         if (b.y > TILES_GROUND_Y - 5) {
           b.y = TILES_GROUND_Y - 5;
+          groundContacts += 1;
+          groundXSum += b.x;
         }
       }
     }
+
+    this.tailGroundTouch = groundContacts > 0;
+    if (groundContacts > 0) {
+      this.tailGroundTouchX = groundXSum / groundContacts;
+    }
+  }
+
+  updateCatHazard(dt) {
+    if (!this.cat) return;
+
+    this.catWanderTimer -= dt;
+    if (this.catWanderTimer <= 0) {
+      const localMin = Phaser.Math.Clamp(this.cat.x - CAT_WANDER_RADIUS, 18, GAME_W - 18);
+      const localMax = Phaser.Math.Clamp(this.cat.x + CAT_WANDER_RADIUS, 18, GAME_W - 18);
+      this.catTargetX = Phaser.Math.Between(localMin, localMax);
+      this.catWanderTimer = Phaser.Math.FloatBetween(2.8, 5.2);
+    }
+
+    const maxStep = CAT_WANDER_SPEED * dt;
+    const dx = this.catTargetX - this.cat.x;
+    if (Math.abs(dx) <= maxStep) this.cat.x = this.catTargetX;
+    else this.cat.x += Math.sign(dx) * maxStep;
+    const catVx = this.catTargetX - this.cat.x;
+    if (Math.abs(catVx) > 0.8) this.cat.flipX = catVx < 0;
+
+    if (!this.dead) {
+      const justTouchedGround = this.tailGroundTouch && !this.tailGroundTouchPrev;
+      if (justTouchedGround && this.time.now >= this.catNextBiteAt) {
+        this.catNextBiteAt = this.time.now + CAT_BITE_COOLDOWN_MS;
+        if (Math.random() < CAT_BITE_CHANCE) {
+          this.biteByCat();
+        }
+      }
+    }
+
+    this.tailGroundTouchPrev = this.tailGroundTouch;
   }
 
   drawTail() {

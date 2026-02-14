@@ -1,8 +1,15 @@
-# 🪁 Laga Layang — Single-Player Kite Fighting Game
+# 🪁 Laga Layang — Kite Fighting Game
 
-A competitive pixel-art kite fighting game built with **Phaser 3** and **Node.js**.
+A single-player pixel-art kite survival game built with **Phaser 3** and **Node.js**.  
+Dodge obstacles, ride the wind, and survive dynamic weather — how long can you keep your kite in the sky?
 
-Fight through an endless roster of NPC kite fighters and push your score up the leaderboard.
+---
+
+## 🎬 Gameplay
+
+You control a kite tethered to a player on the ground. Drag your cursor/finger to steer the kite through the sky while avoiding **rocks**, **birds**, and **wind gusts** that fly toward you. Keep the kite airborne — letting it sit on the ground drains your HP!
+
+Your score climbs as you dodge obstacles. Beat your best to **unlock new kite types**, each with unique physics.
 
 ---
 
@@ -10,92 +17,110 @@ Fight through an endless roster of NPC kite fighters and push your score up the 
 
 ```
 laga-layang/
-├── package.json        # Dependencies (express)
-├── server.js           # Static web server
+├── package.json
+├── server.js              # Express static server
 ├── README.md
 └── public/
-    ├── index.html      # Entry point (Phaser 3 + Socket.io CDN)
-    └── game.js         # Game logic: physics, combat, HUD, NPC AI, leaderboard
+    ├── index.html          # Entry point (loads Phaser 3 via CDN)
+    ├── game.js             # All game logic (~1000 lines)
+    └── assets/
+        ├── BGBack.png      # Far parallax clouds
+        ├── BGFront.png     # Near parallax clouds
+        ├── CloudsBack.png  # Cloud layer (back)
+        ├── CloudsFront.png # Cloud layer (front)
+        ├── background.png  # Sky background
+        ├── scenery.png     # Foreground scenery
+        ├── tiles.png       # Ground tiles
+        └── ChipMug.ttf     # Pixel font
 ```
 
-## 🚀 Installation & Running
+---
+
+## 🚀 Getting Started
 
 ### Prerequisites
-- [Node.js](https://nodejs.org) v16+ installed
+- [Node.js](https://nodejs.org) v16+
 
-### Steps
+### Run Locally
 
 ```bash
-# 1. Navigate to the project folder
 cd laga-layang
-
-# 2. Install dependencies
 npm install
-
-# 3. Start the server
 npm start
 ```
 
 Open **http://localhost:3000** in your browser.
 
-Runs fully in a single tab.
-
 ---
 
 ## 🎮 Controls
 
-| Input | Desktop | Mobile |
+| Action | Desktop | Mobile |
 |---|---|---|
-| **Reel In (Tension)** | Hold `SPACE` | Hold Screen (Touch) |
-| **Float (Lift)** | Release `SPACE` | Release Touch |
+| **Steer kite** | Move cursor | Drag finger |
+| **Reel in (boost)** | Hold click | Hold touch |
+| **Float** | Release click | Release touch |
 
 ---
 
-## ⚙️ Gameplay Mechanics
+## ⚙️ Features
 
-### Kite Physics
-- **Lift (Passive):** Kite floats UP and drifts LEFT automatically.
-- **Tension (Active):** Holding input reels the kite DOWN and RIGHT.
-- **Snapping:** If the Tension bar hits 100%, your string snaps — **Game Over!**
+### 🪁 Kite Types
+Five kites with unique stats — unlock them by beating high scores:
 
-### Combat
-- When two kites overlap, the **faster** kite cuts the **slower** kite.
-- The loser's kite explodes into particles with camera shake.
-- If speeds are very close, kites bounce off harmlessly.
+| Kite | Unlock At | Trait |
+|---|---|---|
+| **Classic** | 0 | Default balanced kite |
+| **Swift** | 350 | Faster, lighter |
+| **Heavy** | 700 | Slow but tough |
+| **Balanced** | 1,100 | Refined handling |
+| **Night Owl** | 1,600 | Best all-rounder |
 
-### Multiplayer
-- Auto-matchmaking: Two players are placed into a room automatically.
-- If an opponent disconnects, you'll see **"Opponent Flew Away! 🪁💨"**.
-- After a match, press SPACE/tap to request a rematch.
+### 🌦️ Dynamic Weather
+Weather changes every 12–22 seconds, affecting wind and gravity:
 
----
+- **Clear** — Calm skies
+- **Breezy** — Stronger wind gusts
+- **Rainy** — Heavier kite, rain particles
+- **Storm** — Intense wind, lightning strikes, camera shake
 
-## 🐛 Debug Mode
+### 🌗 Day-Night Cycle
+A full day-night cycle runs every 60 seconds, dimming the sky with a smooth overlay.
 
-In `public/game.js`, toggle the constant at the top:
+### 🪨 Obstacles
+Three obstacle types spawn from the right, increasing in speed as your score climbs:
 
-```js
-const DEBUG_MODE = true;  // shows hitbox outlines
-```
+- **Rocks** — Solid and direct
+- **Birds** — Mid-air threats
+- **Gusts** — Shimmering wind columns
 
----
+### ❤️ HP & Ground Penalty
+- Start with **3 HP** (hearts)
+- Colliding with obstacles costs 1 HP (with brief invincibility frames)
+- Staying on the ground too long also drains HP — keep flying!
+- Losing all HP triggers a death animation where the kite tumbles and lands flat
 
-## 🎨 Custom Art
+### 🎵 Procedural Chiptune BGM
+An auto-generated chiptune melody plays using the Web Audio API — no audio files needed.
 
-The game uses colored rectangles by default. To use custom pixel art:
-
-1. Place `kite.png` and `bg.png` in the `public/` folder.
-2. In `public/game.js`, find the `BootScene.preload()` method and **uncomment** the asset loading lines:
-
-```js
-this.load.image('kite', 'kite.png');
-this.load.image('bg',   'bg.png');
-```
+### 🎨 Visual Effects
+- **Parallax scrolling** cloud layers
+- **Verlet-integrated** kite tail physics
+- **Particle effects** for rain, wind, hits, and death
+- **Camera shake** on impacts and lightning
+- **Pixel-art textures** generated at runtime (player, kites, obstacles, hearts)
 
 ---
 
 ## 📋 Tech Stack
 
 - **Frontend:** HTML5, Phaser 3 (CDN), JavaScript ES6
-- **Backend:** Node.js, Express, Socket.io
-- **Resolution:** 320×180 (pixel-perfect scaling) for a 16-bit aesthetic
+- **Backend:** Node.js, Express
+- **Resolution:** 640×360 with `Phaser.Scale.FIT`
+- **Font:** ChipMug (custom pixel TTF)
+
+---
+
+## 📄 License
+
+MIT

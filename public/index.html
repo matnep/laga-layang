@@ -1,9 +1,11 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Laga Layang — Kite Fighting</title>
+  <link rel="icon" href="data:,">
+  <title>laga layang</title>
   <meta name="description" content="Single-player competitive kite fighting game">
   <style>
     @font-face {
@@ -14,9 +16,16 @@
       font-display: swap;
     }
 
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body {
-      width: 100%; height: 100%;
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
       background: #0d0d0d;
       overflow: hidden;
       touch-action: none;
@@ -25,13 +34,21 @@
       user-select: none;
       font-family: 'ChipMug', monospace;
     }
+
     #game-container {
-      width: 100vw; height: 100vh;
-      display: flex; align-items: center; justify-content: center;
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
-    canvas { image-rendering: auto; }
+
+    canvas {
+      image-rendering: auto;
+    }
   </style>
 </head>
+
 <body>
   <div id="game-container"></div>
 
@@ -39,4 +56,5 @@
   <script>window.addEventListener('contextmenu', (e) => e.preventDefault());</script>
   <script src="game.js"></script>
 </body>
+
 </html>

@@ -1,0 +1,14 @@
+{
+  "name": "laga-layang",
+  "version": "1.0.0",
+  "description": "Single-player competitive pixel art kite fighting game",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": ["game", "single-player", "kite", "phaser"],
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.21.0"
+  }
+}

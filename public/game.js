@@ -877,9 +877,18 @@ class RunnerScene extends Phaser.Scene {
 
       if (crashed) {
         const groundedAt = o.getData('groundedAt') || 0;
-        if (groundedAt && this.time.now - groundedAt > 1200) {
-          o.destroy();
-          continue;
+        if (groundedAt) {
+          const groundedAge = this.time.now - groundedAt;
+          if (groundedAge > 700) {
+            const blink = Math.floor((groundedAge - 700) / 80) % 2 === 0;
+            o.setVisible(blink);
+          } else {
+            o.setVisible(true);
+          }
+          if (groundedAge > 1250) {
+            o.destroy();
+            continue;
+          }
         }
       }
 
@@ -1063,7 +1072,7 @@ class RunnerScene extends Phaser.Scene {
     this.groundTimer = 0;
     this.lastGroundDamageTime = this.time.now;
 
-    this.kite.x = Phaser.Math.Clamp(this.player.x, 14, GAME_W - 14);
+    this.kite.x = Phaser.Math.Clamp(this.kite.x, 14, GAME_W - 14);
     this.kite.y = Phaser.Math.Clamp(KITE_RETURN_TARGET_Y, 14, this.kiteGroundY - 12);
     this.kiteVX = 0;
     this.kiteVY = 0;
@@ -1111,21 +1120,19 @@ class RunnerScene extends Phaser.Scene {
     const kiteX = this.kite.x;
     const kiteY = this.kite.y;
 
-    this.stringGfx.lineStyle(1, 0xffb36a, 0.45);
     const midX = (kiteX + handX) / 2;
     const midY = (kiteY + handY) / 2 + 18;
-
-    this.stringGfx.beginPath();
-    this.stringGfx.moveTo(kiteX, kiteY);
-    const steps = 14;
-    for (let i = 1; i <= steps; i++) {
-      const tt = i / steps;
+    const dots = 24;
+    for (let i = 0; i <= dots; i++) {
+      const tt = i / dots;
       const inv = 1 - tt;
       const x = inv * inv * kiteX + 2 * inv * tt * midX + tt * tt * handX;
       const y = inv * inv * kiteY + 2 * inv * tt * midY + tt * tt * handY;
-      this.stringGfx.lineTo(x, y);
+      const alpha = Phaser.Math.Linear(0.2, 0.95, tt);
+      const r = Phaser.Math.Linear(1.5, 0.8, tt);
+      this.stringGfx.fillStyle(0xffffff, alpha);
+      this.stringGfx.fillCircle(x, y, r);
     }
-    this.stringGfx.strokePath();
   }
 
   updateTailPhysics(dt) {

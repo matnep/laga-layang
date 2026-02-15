@@ -2,7 +2,7 @@ const GAME_W = 640;
 const GAME_H = 360;
 const FPS_LIMIT = 90;
 const GROUND_Y = GAME_H - 50;
-const PLAYER_Y = GROUND_Y - 11;
+const PLAYER_Y = GROUND_Y - 12;
 
 const KITE_SPRING = 70;
 const KITE_DRAG = 4.8;
@@ -106,6 +106,12 @@ class BootScene extends Phaser.Scene {
     this.load.image('background', 'assets/background.png');
     this.load.image('scenery', 'assets/scenery.png');
     this.load.image('tiles', 'assets/tiles.png');
+    this.load.spritesheet('character', 'assets/character.png', {
+      frameWidth: 32,
+      frameHeight: 48
+    });
+    this.load.image('paper1', 'assets/paper1.png');
+    this.load.image('paper2', 'assets/paper2.png');
     this.load.spritesheet('chicken', 'assets/chicken.png', {
       frameWidth: 16,
       frameHeight: 16
@@ -331,6 +337,25 @@ class RunnerScene extends Phaser.Scene {
   }
 
   setupAnimations() {
+    if (this.textures.exists('character')) {
+      if (!this.anims.exists('player_idle')) {
+        this.anims.create({
+          key: 'player_idle',
+          frames: this.anims.generateFrameNumbers('character', { start: 0, end: 3 }),
+          frameRate: 6,
+          repeat: -1
+        });
+      }
+      if (!this.anims.exists('player_walk')) {
+        this.anims.create({
+          key: 'player_walk',
+          frames: this.anims.generateFrameNumbers('character', { start: 4, end: 7 }),
+          frameRate: 10,
+          repeat: -1
+        });
+      }
+    }
+
     if (this.textures.exists('chicken') && !this.anims.exists('chicken_fly')) {
       this.anims.create({
         key: 'chicken_fly',
@@ -394,8 +419,17 @@ class RunnerScene extends Phaser.Scene {
   }
 
   buildActors() {
-    this.player = this.add.sprite(GAME_W * 0.35, PLAYER_Y, 'player').setOrigin(0.5, 1).setDepth(40);
+    this.usingCharacterSprite = this.textures.exists('character');
+    this.player = this.add.sprite(
+      GAME_W * 0.35,
+      PLAYER_Y,
+      this.usingCharacterSprite ? 'character' : 'player'
+    ).setOrigin(0.5, 1).setDepth(40);
+    if (this.usingCharacterSprite) {
+      this.player.play('player_idle');
+    }
     this.cat = this.add.sprite(GAME_W * 0.5, TILES_GROUND_Y - 7, 'cat')
+      .setY(TILES_GROUND_Y - 8)
       .setOrigin(0.5, 1)
       .setDepth(42);
 
@@ -574,6 +608,16 @@ class RunnerScene extends Phaser.Scene {
       quantity: 1,
       tint: 0xd3efff
     }).setDepth(33);
+
+    this.objectTrailEmitter = this.add.particles(0, 0, 'particle', {
+      speed: { min: 8, max: 22 },
+      scale: { start: 0.7, end: 0 },
+      alpha: { start: 0.34, end: 0 },
+      lifespan: { min: 180, max: 280 },
+      frequency: -1,
+      quantity: 1,
+      tint: 0xffffff
+    }).setDepth(42);
   }
 
   update(time, delta) {
@@ -706,12 +750,21 @@ class RunnerScene extends Phaser.Scene {
 
   updatePlayer(dt, t) {
     const targetX = Phaser.Math.Clamp(this.pointerX, 30, GAME_W - 30);
+    const prevX = this.player.x;
     const dx = targetX - this.player.x;
     const maxStep = PLAYER_WALK_SPEED * dt;
     if (Math.abs(dx) <= maxStep) this.player.x = targetX;
     else this.player.x += Math.sign(dx) * maxStep;
-    this.player.y = PLAYER_Y + Math.sin(t * 15) * 1.2;
+    this.player.y = PLAYER_Y;
     this.player.flipX = this.pointerX < this.player.x;
+
+    if (this.usingCharacterSprite) {
+      const moved = Math.abs(this.player.x - prevX);
+      const animKey = moved > 0.08 ? 'player_walk' : 'player_idle';
+      if (this.player.anims.currentAnim?.key !== animKey) {
+        this.player.play(animKey, true);
+      }
+    }
   }
 
   updateKite(dt, t) {
@@ -785,11 +838,13 @@ class RunnerScene extends Phaser.Scene {
   }
 
   spawnObstacle(speedTier) {
-    const roll = Math.random();
-    const roundObstacleKey = this.textures.exists('chicken') ? 'chicken' : 'rock';
-    let key = roundObstacleKey;
-    if (roll > 0.66) key = 'bird';
-    else if (roll > 0.33) key = 'gust';
+    const available = [];
+    if (this.textures.exists('paper1')) available.push('paper1');
+    if (this.textures.exists('paper2')) available.push('paper2');
+    if (this.textures.exists('chicken')) available.push('chicken');
+    const key = available.length
+      ? Phaser.Utils.Array.GetRandom(available)
+      : (this.textures.exists('chicken') ? 'chicken' : 'rock');
 
     const y = Phaser.Math.Between(36, GROUND_Y - 48);
     const fromLeft = Math.random() < 0.5;
@@ -817,6 +872,8 @@ class RunnerScene extends Phaser.Scene {
       o.setScale(2);
       o.setSize(14, 14, true);
       o.body.setSize(22, 22, true);
+    } else if (key === 'paper1' || key === 'paper2') {
+      o.body.setSize(Math.max(8, o.width), Math.max(8, o.height), true);
     }
   }
 
@@ -900,16 +957,23 @@ class RunnerScene extends Phaser.Scene {
         o.setData('passed', true);
       }
 
-      if (!crashed && o.getData('kind') === 'gust') {
-        o.alpha = 0.8 + Math.sin(this.time.now * 0.015 + o.x * 0.03) * 0.2;
-      }
-
       if (!crashed && o.getData('kind') === 'chicken' && o.body) {
-        const targetRot = Phaser.Math.Clamp(Math.atan2(o.body.velocity.y, o.body.velocity.x), -0.75, 0.75);
-        o.rotation = Phaser.Math.Angle.RotateTo(o.rotation, targetRot, dt * 2.4);
         if (Math.abs(o.body.velocity.x) > 2) {
           o.flipX = o.body.velocity.x < 0;
         }
+      } else if (!crashed && (o.getData('kind') === 'paper1' || o.getData('kind') === 'paper2') && o.body) {
+        if (Math.abs(o.body.velocity.x) > 2) {
+          o.flipX = o.body.velocity.x < 0;
+        }
+      }
+
+      if (!crashed && this.objectTrailEmitter && o.body && Math.random() < 0.55) {
+        const vx = o.body.velocity.x || 0;
+        const vy = o.body.velocity.y || 0;
+        const mag = Math.max(1, Math.hypot(vx, vy));
+        const tx = o.x - (vx / mag) * 8;
+        const ty = o.y - (vy / mag) * 4;
+        this.objectTrailEmitter.emitParticleAt(tx, ty, 1);
       }
 
       o.setData('prevX', o.x);

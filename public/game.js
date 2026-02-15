@@ -64,11 +64,21 @@ const JSONBIN_BIN_ID = '69915d27d0ea881f40bb93b3';
 const JSONBIN_ACCESS_KEY = '$2a$10$OzNTc3wACLgI09DOkHRkP.cU0SWC9dEZys/IMg9jwlLRwEMIGGbfu';
 const JSONBIN_BASE_URL = 'https://api.jsonbin.io/v3/b';
 const LEADERBOARD_LIMIT = 5;
+const LEADERBOARD_SHOW_COUNT = 4;
+
+function sanitizeLeaderboardName(value) {
+    return String(value || 'ANON')
+        .toUpperCase()
+        .replace(/[^A-Z0-9 ]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 20) || 'ANON';
+}
 
 function normalizeLeaderboardEntries(entries) {
     const byPlayer = new Map();
     for (const entry of entries || []) {
-        const name = String(entry.name || 'Anon').slice(0, 20);
+        const name = sanitizeLeaderboardName(entry.name);
         const score = Math.floor(Number(entry.score) || 0);
         const at = Number(entry.at) || 0;
         const key = name.toLowerCase();
@@ -103,7 +113,7 @@ async function submitScore(name, score) {
         const current = await fetchLeaderboard();
         const next = normalizeLeaderboardEntries([
             ...current,
-            { name: String(name).slice(0, 20), score: Math.floor(score), at: Date.now() }
+            { name: sanitizeLeaderboardName(name), score: Math.floor(score), at: Date.now() }
         ]);
         await fetch(`${JSONBIN_BASE_URL}/${JSONBIN_BIN_ID}`, {
             method: 'PUT',
@@ -583,11 +593,20 @@ class RunnerScene extends Phaser.Scene {
     }
 
     buildLeaderboardUI() {
-        this.leaderboardText = this.add.text(GAME_W / 2, GAME_H - 12, '', {
-            fontFamily: 'ChipMug',
-            fontSize: '12px',
-            color: 'rgba(255,255,255,0.55)'
-        }).setOrigin(0.5, 0.5).setDepth(102);
+        const y = GAME_H - 12;
+        const spacing = 62;
+        const totalW = spacing * (LEADERBOARD_SHOW_COUNT - 1);
+        const startX = (GAME_W - totalW) / 2;
+
+        this.lbEntryTexts = [];
+        for (let i = 0; i < LEADERBOARD_SHOW_COUNT; i++) {
+            const txt = this.add.text(startX + i * spacing, y, '', {
+                fontFamily: 'ChipMug',
+                fontSize: '11px',
+                color: 'rgba(255,255,255,0.55)'
+            }).setOrigin(0.5, 0.5).setDepth(102);
+            this.lbEntryTexts.push(txt);
+        }
 
         this.lbEntries = [];
         this.lbLastFetch = 0;
@@ -602,12 +621,10 @@ class RunnerScene extends Phaser.Scene {
     }
 
     renderLeaderboardEntries() {
-        const top = this.lbEntries[0];
-        if (!this.leaderboardText) return;
-        if (top) {
-            this.leaderboardText.setText(`${top.name} ${top.score}`);
-        } else {
-            this.leaderboardText.setText('');
+        if (!this.lbEntryTexts) return;
+        for (let i = 0; i < LEADERBOARD_SHOW_COUNT; i++) {
+            const entry = this.lbEntries[i];
+            this.lbEntryTexts[i].setText(entry ? `${entry.name} ${entry.score}` : '');
         }
     }
 
@@ -617,7 +634,8 @@ class RunnerScene extends Phaser.Scene {
             playerName = await this.showNameInput();
             if (playerName) localStorage.setItem('laga_layang_name', playerName);
         }
-        if (!playerName) playerName = 'Anon';
+        playerName = sanitizeLeaderboardName(playerName);
+        localStorage.setItem('laga_layang_name', playerName);
         const entries = await submitScore(playerName, finalScore);
         if (entries) {
             this.lbEntries = entries;
@@ -653,9 +671,13 @@ class RunnerScene extends Phaser.Scene {
             const input = document.getElementById('player-name-input');
             const btn = document.getElementById('player-name-submit');
             input.focus();
+            input.addEventListener('input', () => {
+                const filtered = input.value.toUpperCase().replace(/[^A-Z0-9 ]/g, '').slice(0, 20);
+                if (filtered !== input.value) input.value = filtered;
+            });
 
             const finish = () => {
-                const val = input.value.trim().slice(0, 20) || 'Anon';
+                const val = sanitizeLeaderboardName(input.value);
                 overlay.remove();
                 resolve(val);
             };

@@ -112,9 +112,17 @@ class BootScene extends Phaser.Scene {
     });
     this.load.image('paper1', 'assets/paper1.png');
     this.load.image('paper2', 'assets/paper2.png');
-    this.load.spritesheet('chicken', 'assets/chicken.png', {
-      frameWidth: 16,
-      frameHeight: 16
+    this.load.spritesheet('cat', 'assets/cat.png', {
+      frameWidth: 64,
+      frameHeight: 48
+    });
+    this.load.spritesheet('chicken1', 'assets/chicken1.png', {
+      frameWidth: 32,
+      frameHeight: 32
+    });
+    this.load.spritesheet('chicken2', 'assets/chicken2.png', {
+      frameWidth: 32,
+      frameHeight: 32
     });
   }
 
@@ -233,18 +241,20 @@ class BootScene extends Phaser.Scene {
     g.generateTexture('heart', 18, 18);
     g.clear();
 
-    // Cat (ground hazard)
-    g.fillStyle(0x2d2d2d);
-    g.fillRect(4, 10, 20, 10); // body
-    g.fillRect(18, 6, 8, 8); // head
-    g.fillTriangle(19, 6, 22, 1, 24, 6); // ear
-    g.fillTriangle(23, 6, 26, 1, 28, 6); // ear
-    g.fillStyle(0x111111);
-    g.fillRect(7, 19, 4, 5); // legs
-    g.fillRect(15, 19, 4, 5);
-    g.fillStyle(0xf7e27a);
-    g.fillRect(23, 9, 2, 2); // eye
-    g.generateTexture('cat', 32, 24);
+    // Cat placeholder (only when cat spritesheet is not provided)
+    if (!this.textures.exists('cat')) {
+      g.fillStyle(0x2d2d2d);
+      g.fillRect(4, 10, 20, 10); // body
+      g.fillRect(18, 6, 8, 8); // head
+      g.fillTriangle(19, 6, 22, 1, 24, 6); // ear
+      g.fillTriangle(23, 6, 26, 1, 28, 6); // ear
+      g.fillStyle(0x111111);
+      g.fillRect(7, 19, 4, 5); // legs
+      g.fillRect(15, 19, 4, 5);
+      g.fillStyle(0xf7e27a);
+      g.fillRect(23, 9, 2, 2); // eye
+      g.generateTexture('cat', 32, 24);
+    }
 
     g.destroy();
   }
@@ -324,6 +334,7 @@ class RunnerScene extends Phaser.Scene {
     this.catAttackUntil = 0;
     this.catTargetX = GAME_W * 0.5;
     this.catWanderTimer = Phaser.Math.FloatBetween(0.8, 1.8);
+    this.catRunUntil = 0;
 
     this.buildWorld();
     this.buildActors();
@@ -356,11 +367,43 @@ class RunnerScene extends Phaser.Scene {
       }
     }
 
-    if (this.textures.exists('chicken') && !this.anims.exists('chicken_fly')) {
+    if (this.textures.exists('chicken1') && !this.anims.exists('chicken1_fly')) {
       this.anims.create({
-        key: 'chicken_fly',
-        frames: this.anims.generateFrameNumbers('chicken', { start: 0, end: 7 }),
+        key: 'chicken1_fly',
+        frames: this.anims.generateFrameNumbers('chicken1', { start: 0, end: 7 }),
         frameRate: 12,
+        repeat: -1
+      });
+    }
+    if (this.textures.exists('chicken2') && !this.anims.exists('chicken2_fly')) {
+      this.anims.create({
+        key: 'chicken2_fly',
+        frames: this.anims.generateFrameNumbers('chicken2', { start: 0, end: 7 }),
+        frameRate: 12,
+        repeat: -1
+      });
+    }
+
+    const catFrames = this.textures.exists('cat')
+      ? (this.textures.get('cat').frameTotal - 1)
+      : 0;
+    if (catFrames >= 17 && !this.anims.exists('cat_idle')) {
+      this.anims.create({
+        key: 'cat_idle',
+        frames: this.anims.generateFrameNumbers('cat', { start: 0, end: 5 }),
+        frameRate: 8,
+        repeat: -1
+      });
+      this.anims.create({
+        key: 'cat_walk',
+        frames: this.anims.generateFrameNumbers('cat', { start: 6, end: 11 }),
+        frameRate: 10,
+        repeat: -1
+      });
+      this.anims.create({
+        key: 'cat_run',
+        frames: this.anims.generateFrameNumbers('cat', { start: 12, end: 17 }),
+        frameRate: 14,
         repeat: -1
       });
     }
@@ -429,9 +472,13 @@ class RunnerScene extends Phaser.Scene {
       this.player.play('player_idle');
     }
     this.cat = this.add.sprite(GAME_W * 0.5, TILES_GROUND_Y - 7, 'cat')
-      .setY(TILES_GROUND_Y - 8)
+      .setY(TILES_GROUND_Y - 5)
+      .setScale(0.5)
       .setOrigin(0.5, 1)
       .setDepth(42);
+    if (this.anims.exists('cat_idle')) {
+      this.cat.play('cat_idle');
+    }
 
     this.kite = this.add.sprite(GAME_W * 0.35, 115, 'kite_' + this.currentKiteKey).setDepth(46);
     this.physics.add.existing(this.kite);
@@ -841,10 +888,11 @@ class RunnerScene extends Phaser.Scene {
     const available = [];
     if (this.textures.exists('paper1')) available.push('paper1');
     if (this.textures.exists('paper2')) available.push('paper2');
-    if (this.textures.exists('chicken')) available.push('chicken');
+    if (this.textures.exists('chicken1')) available.push('chicken1');
+    if (this.textures.exists('chicken2')) available.push('chicken2');
     const key = available.length
       ? Phaser.Utils.Array.GetRandom(available)
-      : (this.textures.exists('chicken') ? 'chicken' : 'rock');
+      : 'rock';
 
     const y = Phaser.Math.Between(36, GROUND_Y - 48);
     const fromLeft = Math.random() < 0.5;
@@ -867,13 +915,13 @@ class RunnerScene extends Phaser.Scene {
     o.setData('turnTimer', Phaser.Math.FloatBetween(1.2, 2.8));
     o.setData('prevX', o.x);
 
-    if (key === 'chicken') {
-      o.play('chicken_fly');
-      o.setScale(2);
-      o.setSize(14, 14, true);
-      o.body.setSize(22, 22, true);
+    if (key === 'chicken1' || key === 'chicken2') {
+      o.play(key + '_fly');
+      o.setScale(0.5);
+      o.body.setSize(14, 14, true);
     } else if (key === 'paper1' || key === 'paper2') {
-      o.body.setSize(Math.max(8, o.width), Math.max(8, o.height), true);
+      o.setScale(0.4);
+      o.body.setSize(10, 10, true);
     }
   }
 
@@ -957,9 +1005,9 @@ class RunnerScene extends Phaser.Scene {
         o.setData('passed', true);
       }
 
-      if (!crashed && o.getData('kind') === 'chicken' && o.body) {
+      if (!crashed && (o.getData('kind') === 'chicken1' || o.getData('kind') === 'chicken2') && o.body) {
         if (Math.abs(o.body.velocity.x) > 2) {
-          o.flipX = o.body.velocity.x < 0;
+          o.flipX = o.body.velocity.x > 0;
         }
       } else if (!crashed && (o.getData('kind') === 'paper1' || o.getData('kind') === 'paper2') && o.body) {
         if (Math.abs(o.body.velocity.x) > 2) {
@@ -1174,6 +1222,7 @@ class RunnerScene extends Phaser.Scene {
     });
     biteFx.explode(10);
     this.time.delayedCall(380, () => biteFx.destroy());
+    this.catRunUntil = this.time.now + 520;
 
     if (this.hp <= 0) {
       this.triggerDeath();
@@ -1272,12 +1321,24 @@ class RunnerScene extends Phaser.Scene {
       this.catWanderTimer = Phaser.Math.FloatBetween(2.8, 5.2);
     }
 
-    const maxStep = CAT_WANDER_SPEED * dt;
+    const running = this.time.now < this.catRunUntil;
+    const catSpeed = running ? CAT_WANDER_SPEED * 1.8 : CAT_WANDER_SPEED;
+    const maxStep = catSpeed * dt;
     const dx = this.catTargetX - this.cat.x;
     if (Math.abs(dx) <= maxStep) this.cat.x = this.catTargetX;
     else this.cat.x += Math.sign(dx) * maxStep;
     const catVx = this.catTargetX - this.cat.x;
-    if (Math.abs(catVx) > 0.8) this.cat.flipX = catVx < 0;
+    if (Math.abs(catVx) > 0.8) this.cat.flipX = catVx > 0;
+
+    if (this.anims.exists('cat_idle')) {
+      const moving = Math.abs(catVx) > 0.6;
+      let animKey = 'cat_idle';
+      if (running) animKey = 'cat_run';
+      else if (moving) animKey = 'cat_walk';
+      if (this.cat.anims.currentAnim?.key !== animKey) {
+        this.cat.play(animKey, true);
+      }
+    }
 
     if (!this.dead) {
       const justTouchedGround = this.tailGroundTouch && !this.tailGroundTouchPrev;

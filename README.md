@@ -18,20 +18,12 @@ Your score climbs as you dodge obstacles. Beat your best to **unlock new kite ty
 ```
 laga-layang/
 ├── package.json
-├── server.js              # Express static server
+├── server.js              # Express static server + leaderboard API
 ├── README.md
 └── public/
     ├── index.html          # Entry point (loads Phaser 3 via CDN)
-    ├── game.js             # All game logic (~1000 lines)
+    ├── game.js             # All game logic
     └── assets/
-        ├── BGBack.png      # Far parallax clouds
-        ├── BGFront.png     # Near parallax clouds
-        ├── CloudsBack.png  # Cloud layer (back)
-        ├── CloudsFront.png # Cloud layer (front)
-        ├── background.png  # Sky background
-        ├── scenery.png     # Foreground scenery
-        ├── tiles.png       # Ground tiles
-        └── ChipMug.ttf     # Pixel font
 ```
 
 ---
@@ -39,7 +31,7 @@ laga-layang/
 ## 🚀 Getting Started
 
 ### Prerequisites
-- [Node.js](https://nodejs.org) v16+
+- [Node.js](https://nodejs.org) v18+
 
 ### Run Locally
 
@@ -53,6 +45,34 @@ Open **http://localhost:3000** in your browser.
 
 ---
 
+## 🏆 Shared Leaderboard (jsonbin.io)
+
+This project includes server endpoints that proxy to jsonbin:
+
+- `GET /api/leaderboard`
+- `POST /api/leaderboard` with JSON body: `{ "name": "Player", "score": 123 }`
+
+### Environment Variables
+
+Set these on your deployment/server:
+
+- `JSONBIN_BIN_ID`
+- `JSONBIN_MASTER_KEY`
+
+Example (PowerShell):
+
+```powershell
+$env:JSONBIN_BIN_ID="<your_bin_id>"
+$env:JSONBIN_MASTER_KEY="<your_master_key>"
+npm start
+```
+
+Important:
+- Do **not** put your JSONBin master key in frontend code.
+- Keep all JSONBin calls server-side through `/api/leaderboard`.
+
+---
+
 ## 🎮 Controls
 
 | Action | Desktop | Mobile |
@@ -63,61 +83,11 @@ Open **http://localhost:3000** in your browser.
 
 ---
 
-## ⚙️ Features
-
-### 🪁 Kite Types
-Five kites with unique stats — unlock them by beating high scores:
-
-| Kite | Unlock At | Trait |
-|---|---|---|
-| **Classic** | 0 | Default balanced kite |
-| **Swift** | 350 | Faster, lighter |
-| **Heavy** | 700 | Slow but tough |
-| **Balanced** | 1,100 | Refined handling |
-| **Night Owl** | 1,600 | Best all-rounder |
-
-### 🌦️ Dynamic Weather
-Weather changes every 12–22 seconds, affecting wind and gravity:
-
-- **Clear** — Calm skies
-- **Breezy** — Stronger wind gusts
-- **Rainy** — Heavier kite, rain particles
-- **Storm** — Intense wind, lightning strikes, camera shake
-
-### 🌗 Day-Night Cycle
-A full day-night cycle runs every 60 seconds, dimming the sky with a smooth overlay.
-
-### 🪨 Obstacles
-Three obstacle types spawn from the right, increasing in speed as your score climbs:
-
-- **Rocks** — Solid and direct
-- **Birds** — Mid-air threats
-- **Gusts** — Shimmering wind columns
-
-### ❤️ HP & Ground Penalty
-- Start with **3 HP** (hearts)
-- Colliding with obstacles costs 1 HP (with brief invincibility frames)
-- Staying on the ground too long also drains HP — keep flying!
-- Losing all HP triggers a death animation where the kite tumbles and lands flat
-
-### 🎵 Procedural Chiptune BGM
-An auto-generated chiptune melody plays using the Web Audio API — no audio files needed.
-
-### 🎨 Visual Effects
-- **Parallax scrolling** cloud layers
-- **Verlet-integrated** kite tail physics
-- **Particle effects** for rain, wind, hits, and death
-- **Camera shake** on impacts and lightning
-- **Pixel-art textures** generated at runtime (player, kites, obstacles, hearts)
-
----
-
 ## 📋 Tech Stack
 
 - **Frontend:** HTML5, Phaser 3 (CDN), JavaScript ES6
 - **Backend:** Node.js, Express
-- **Resolution:** 640×360 with `Phaser.Scale.FIT`
-- **Font:** ChipMug (custom pixel TTF)
+- **Leaderboard:** jsonbin.io via server API
 
 ---
 

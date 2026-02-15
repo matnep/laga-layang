@@ -602,7 +602,7 @@ class RunnerScene extends Phaser.Scene {
         for (let i = 0; i < LEADERBOARD_SHOW_COUNT; i++) {
             const txt = this.add.text(startX + i * spacing, y, '', {
                 fontFamily: 'ChipMug',
-                fontSize: '11px',
+                fontSize: '12px',
                 color: 'rgba(255,255,255,0.55)'
             }).setOrigin(0.5, 0.5).setDepth(102);
             this.lbEntryTexts.push(txt);
